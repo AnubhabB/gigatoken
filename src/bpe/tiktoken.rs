@@ -288,8 +288,10 @@ impl Tokenizer {
     /// Shared construction tail ([`Self::new`], [`Self::new_ranked`] and
     /// [`Self::from_ranks`]): derive `vocab_inv` and the pair-rank table
     /// from the finished merges/vocab, seed the pretoken cache, and
-    /// assemble the tokenizer with default pipeline settings (GPT-2
-    /// pretokenization, no added tokens, no NFC).
+    /// assemble the tokenizer with placeholder pipeline settings (GPT-2
+    /// pretokenization, no added tokens, no NFC) that every loader must
+    /// overwrite for its actual scheme — see issue #40 for what relying
+    /// on the placeholder pretokenizer silently does.
     fn from_tables(
         merges: HashMap<(TokenId, TokenId), TokenId, rustc_hash::FxBuildHasher>,
         ranked_merges: Option<RankedMerges>,
@@ -837,28 +839,43 @@ impl Tokenizer {
     ///
     /// [`WorkerPool`]: crate::batch::WorkerPool
     pub fn add_special_token(&mut self, content: Vec<u8>, id: TokenId) {
-        let idx = id.0 as usize;
-        // Loader-phase mutation of the shared model tables: `make_mut`
-        // copies only when a fork holds the tables too (never during
-        // loading, where this is called).
-        let vocab = Arc::make_mut(&mut self.vocab);
-        if idx >= vocab.len() {
-            vocab.resize(idx + 1, Arc::from(Vec::new().as_slice()));
-        }
-        if vocab[idx].is_empty() {
-            vocab[idx] = content.clone().into();
-            // If `content` duplicates an already-present vocab byte
-            // string, `vocab_inv` switches to the new ID (unconditional
-            // overwrite). The short-cache overwrite that keeps a matching
-            // pretoken resolving to `vocab_inv`'s answer happens in
-            // `set_added_tokens` below, which re-derives every added-token
-            // cache overwrite from the updated `vocab_inv` — the same
-            // computation a fork's reseed + re-apply performs (see
-            // [`Self::fork_sized`]), so parent and forked workers agree.
-            Arc::make_mut(&mut self.vocab_inv).insert(vocab[idx].clone(), id);
-        }
+        self.add_special_tokens([(content, id)]);
+    }
+
+    /// Register a batch of special added tokens: all vocab entries are
+    /// written first, then `set_added_tokens` rebuilds the matcher and the
+    /// cache overwrites once — not once per token, which would rebuild the
+    /// Aho-Corasick automaton and re-derive every overwrite each time.
+    pub fn add_special_tokens(&mut self, tokens: impl IntoIterator<Item = (Vec<u8>, TokenId)>) {
         let mut added = self.added_tokens.clone();
-        added.push(AddedTokenDef { content: content.into(), id, lstrip: false, rstrip: false });
+        for (content, id) in tokens {
+            let idx = id.0 as usize;
+            // Loader-phase mutation of the shared model tables: `make_mut`
+            // copies only when a fork holds the tables too (never during
+            // loading, where this is called).
+            let vocab = Arc::make_mut(&mut self.vocab);
+            if idx >= vocab.len() {
+                vocab.resize(idx + 1, Arc::from(Vec::new().as_slice()));
+            }
+            if vocab[idx].is_empty() {
+                vocab[idx] = content.clone().into();
+                // If `content` duplicates an already-present vocab byte
+                // string, `vocab_inv` switches to the new ID (unconditional
+                // overwrite). The short-cache overwrite that keeps a matching
+                // pretoken resolving to `vocab_inv`'s answer happens in
+                // `set_added_tokens` below, which re-derives every added-token
+                // cache overwrite from the updated `vocab_inv` — the same
+                // computation a fork's reseed + re-apply performs (see
+                // [`Self::fork_sized`]), so parent and forked workers agree.
+                Arc::make_mut(&mut self.vocab_inv).insert(vocab[idx].clone(), id);
+            }
+            added.push(AddedTokenDef {
+                content: content.into(),
+                id,
+                lstrip: false,
+                rstrip: false,
+            });
+        }
         self.set_added_tokens(added);
     }
 
@@ -1700,7 +1717,8 @@ mod tests {
         let text = "This is a test string. Please tokenize it!";
         let data_dir = std::env::home_dir().unwrap().join("data");
         let tiktoken_path = data_dir.join("tokenizers/r50k_base.tiktoken");
-        let mut tokenizer = load_tiktoken(tiktoken_path).expect("Failed to load tokenizer");
+        let mut tokenizer = load_tiktoken(tiktoken_path, PretokenizerType::GPT2, Vec::new())
+            .expect("Failed to load tokenizer");
         let pretokenize_iter = crate::pretokenize::pretokenize_as_iter(text.as_bytes());
         let mut output = vec![];
         tokenizer.memoized_encode(pretokenize_iter, |tokens| {

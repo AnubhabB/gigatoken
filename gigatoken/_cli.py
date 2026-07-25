@@ -150,11 +150,13 @@ def _warn_if_memory_tight(total_bytes: int, comparing: bool, limit_bytes: int | 
         )
 
 
-def _load_tokenizer(spec: str) -> Tokenizer:
+def _load_tokenizer(spec: str, pretokenizer: str | None = None) -> Tokenizer:
     from gigatoken import Tokenizer
 
     if spec.endswith(".tiktoken"):
-        return Tokenizer.from_tiktoken(spec)
+        return Tokenizer.from_tiktoken(spec, pretokenizer)
+    if pretokenizer is not None:
+        raise typer.BadParameter("--pretokenizer only applies to .tiktoken vocabulary files")
     if spec.endswith(".model"):
         return Tokenizer.from_sentencepiece(spec)
     return Tokenizer(spec)
@@ -219,6 +221,7 @@ def bench(
     comparison_limit: str = typer.Option("100MB", help="cap the bytes fed to the comparison tokenizer, e.g. 100MB; 'none' compares on everything"),
     validate: bool = typer.Option(False, "--validate", help="check that HuggingFace token ids match gigatoken's on the comparison subset (implies --compare-to hf)"),
     doc_separator: Optional[str] = typer.Option(None, "--doc-separator", help='document separator to split the files on, e.g. "<|endoftext|>"; whole files are single documents otherwise'),
+    pretokenizer: Optional[str] = typer.Option(None, "--pretokenizer", help='pretokenization scheme of a .tiktoken vocabulary that is not one OpenAI publishes, e.g. "gpt2" or "cl100k"'),
 ) -> None:
     """Measure the time to encode FILES with TOKENIZER."""
     if validate and compare_to is None:
@@ -233,7 +236,7 @@ def bench(
 
     from gigatoken import BytesSource, TextFileSource
 
-    gt_tokenizer = _load_tokenizer(tokenizer)
+    gt_tokenizer = _load_tokenizer(tokenizer, pretokenizer)
 
     # gigatoken pass. A separator is handed to gigatoken along with the whole
     # files (documents are split inside Rust, during the encode itself) —

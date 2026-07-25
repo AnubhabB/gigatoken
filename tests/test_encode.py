@@ -13,7 +13,7 @@ def tiktoken_r50k():
 
 @fixture
 def gigatoken_r50k(r50k_tiktoken_path):
-    return BPETokenizer.from_tiktoken(r50k_tiktoken_path)
+    return BPETokenizer.from_tiktoken(r50k_tiktoken_path, "gpt2", {"<|endoftext|>": 50256})
 
 
 def test_use_gigatoken_model(gigatoken_r50k):

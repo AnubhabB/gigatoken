@@ -1,6 +1,8 @@
 import pytest
 import tiktoken
+from conftest import tiktoken_vocab_path
 
+import gigatoken
 from gigatoken.gigatoken_rs import BPETokenizer
 
 
@@ -8,7 +10,7 @@ from gigatoken.gigatoken_rs import BPETokenizer
 def r50k(r50k_tiktoken_path) -> tuple[tiktoken.Encoding, BPETokenizer]:
     """Return (tiktoken_encoding, BPETokenizer) pair for r50k_base."""
     tt = tiktoken.get_encoding("r50k_base")
-    bpe = BPETokenizer.from_tiktoken(r50k_tiktoken_path)
+    bpe = BPETokenizer.from_tiktoken(r50k_tiktoken_path, "gpt2", {"<|endoftext|>": 50256})
     return tt, bpe
 
 
@@ -153,3 +155,57 @@ def test_multiline_code(r50k):
         return self.x * 2
 """
     _assert_same(tt, bpe, code)
+
+
+# ---------------------------------------------------------------------------
+# gigatoken.Tokenizer.from_tiktoken: which pretokenizer and special tokens a
+# rank file gets. The file itself carries neither, so nothing may be guessed
+# (issue #40: every vocabulary used to be pretokenized as r50k).
+# ---------------------------------------------------------------------------
+
+# Texts the schemes disagree on: r50k splits a leading punctuation character
+# off a word and takes digits in twos, cl100k/o200k keep the punctuation and
+# take digits in threes; o200k splits letter runs by case.
+SCHEME_SENSITIVE = [".data", "(self", "_name", "1234", "123456789", "CamelCaseWord", "xé́y", "  \n  end"]
+
+
+@pytest.mark.parametrize("encoding", ["r50k_base", "cl100k_base", "o200k_base"])
+def test_published_encoding_matches_tiktoken(encoding):
+    """Every .tiktoken vocabulary OpenAI publishes loads with its own
+    pretokenization scheme and special tokens, identified by file name."""
+    ref = tiktoken.get_encoding(encoding)
+    tok = gigatoken.Tokenizer.from_tiktoken(tiktoken_vocab_path(encoding))
+    for text in SCHEME_SENSITIVE + SIMPLE_STRINGS + UNICODE_STRINGS + CODE_STRINGS + PARAGRAPHS:
+        assert tok.encode(text.encode("utf-8")).tolist() == ref.encode_ordinary(text), f"{encoding} mismatch for {text!r}"
+    special = "Hello.<|endoftext|>Next."
+    assert tok.encode(special.encode("utf-8")).tolist() == ref.encode(special, allowed_special="all")
+
+
+def test_unnamed_vocab_needs_an_explicit_pretokenizer(tmp_path, r50k_tiktoken_path):
+    """A rank file whose name is not a published encoding cannot be resolved,
+    and says so instead of falling back to some default scheme."""
+    unnamed = tmp_path / "custom.tiktoken"
+    unnamed.symlink_to(r50k_tiktoken_path)
+    with pytest.raises(ValueError, match="pretokenizer"):
+        gigatoken.Tokenizer.from_tiktoken(unnamed)
+    with pytest.raises(ValueError, match="unknown pretokenizer scheme"):
+        gigatoken.Tokenizer.from_tiktoken(unnamed, "not-a-scheme")
+    tok = gigatoken.Tokenizer.from_tiktoken(unnamed, "gpt2")
+    ref = tiktoken.get_encoding("r50k_base")
+    assert tok.encode(b".data").tolist() == ref.encode_ordinary(".data")
+    # Specials are part of the encoding definition, not of the rank file:
+    # none are registered unless asked for.
+    assert tok._special_tokens() == {}
+    tok = gigatoken.Tokenizer.from_tiktoken(unnamed, "gpt2", {"<|endoftext|>": 50256})
+    assert tok._special_tokens() == {"<|endoftext|>": 50256}
+
+
+def test_explicit_pretokenizer_overrides_the_file_name(r50k_tiktoken_path):
+    """A named scheme takes precedence over the one the file name implies —
+    the same ranks then split differently (r50k takes digits in twos, the
+    cl100k scheme in threes)."""
+    as_r50k = gigatoken.Tokenizer.from_tiktoken(r50k_tiktoken_path)
+    as_cl100k = gigatoken.Tokenizer.from_tiktoken(r50k_tiktoken_path, "cl100k")
+    assert as_r50k.encode(b"1234").tolist() != as_cl100k.encode(b"1234").tolist()
+    assert as_r50k._special_tokens() == {"<|endoftext|>": 50256}
+    assert as_cl100k._special_tokens() == {}

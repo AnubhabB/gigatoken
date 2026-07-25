@@ -24,7 +24,9 @@ use crate::bindings::bridge::{
 };
 use crate::bindings::matcher::{SpecialTokenFound, SubstringMatcher};
 use crate::bindings::padding;
-use crate::bindings::pretokenize::{PretokenizerIter, pretokenized_counts, pretokenizer};
+use crate::bindings::pretokenize::{
+    PretokenizerIter, pretokenized_counts, pretokenizer, pretokenizer_scheme,
+};
 use crate::bindings::sources::{
     BytesSource, FileSource, JsonlFileSource, ParquetFileSource, TextFileSource,
     encode_files_ragged,
@@ -35,6 +37,7 @@ use numpy::{IntoPyArray, PyArray1};
 use pyo3::prelude::*;
 use pyo3::pybacked::{PyBackedBytes, PyBackedStr};
 use pyo3::types::{PyBytes, PyDict, PyList};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[pyclass]
@@ -64,30 +67,22 @@ impl BPETokenizer {
 
 #[pymethods]
 impl BPETokenizer {
+    /// Load from a .tiktoken rank file with the named pretokenizer scheme
+    /// and, optionally, a {content: id} mapping of special tokens. The file
+    /// carries neither, so both are the caller's to supply — see
+    /// `gigatoken.Tokenizer.from_tiktoken`, which knows them for the
+    /// encodings OpenAI publishes.
     #[staticmethod]
-    fn from_tiktoken(path: PathBuf) -> PyResult<Self> {
-        Ok(Self {
-            tokenizer: load_tokenizer::tiktoken::load_tiktoken(&path)?,
-            workers: WorkerPool::new(),
-        })
-    }
-    /// Load from a tiktoken rank file plus a tokenizer_config.json carrying
-    /// the special tokens — the layout of repos that ship no tokenizer.json
-    /// (e.g. the moonshotai Kimi line) — with the named pretokenizer scheme.
-    #[staticmethod]
-    fn from_tiktoken_model(
-        model_path: PathBuf,
-        config_path: PathBuf,
+    #[pyo3(signature = (path, pretokenizer, special_tokens = None))]
+    fn from_tiktoken(
+        path: PathBuf,
         pretokenizer: &str,
+        special_tokens: Option<HashMap<String, u32>>,
     ) -> PyResult<Self> {
-        let scheme = pretokenize::PretokenizerType::from_name(pretokenizer).ok_or_else(|| {
-            pyo3::exceptions::PyValueError::new_err(format!(
-                "unknown pretokenizer scheme {pretokenizer:?}; expected one of \
-                 gpt2, gpt4, qwen2, qwen35, olmo3, deepseek_v3, o200k, nemotron, kimi"
-            ))
-        })?;
+        let scheme = pretokenizer_scheme(pretokenizer)?;
+        let special_tokens = special_tokens.unwrap_or_default().into_iter().collect();
         Ok(Self {
-            tokenizer: load_tokenizer::tiktoken::load_tiktoken_model(&model_path, &config_path, scheme)?,
+            tokenizer: load_tokenizer::tiktoken::load_tiktoken(&path, scheme, special_tokens)?,
             workers: WorkerPool::new(),
         })
     }

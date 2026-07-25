@@ -1,33 +1,37 @@
-# URL sources: https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py
+"""The .tiktoken vocabulary files OpenAI publishes, keyed by file name.
 
-from typing import TypedDict
+A .tiktoken file holds mergeable ranks and nothing else: the pretokenization
+scheme (split regex) and the special tokens of an encoding live in the code
+that defines it, not in the file. These are the definitions for the files
+served from openaipublic.blob.core.windows.net/encodings, transcribed from
+https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py.
+Any other rank file has to name its scheme at load time. (p50k_base is
+absent because its ranks are not dense — it leaves 50256 free for
+<|endoftext|> — which the rank loader rejects.)
+"""
 
-from tiktoken.load import load_tiktoken_bpe
+from typing import NamedTuple
 
 ENDOFTEXT = "<|endoftext|>"
+FIM_PREFIX = "<|fim_prefix|>"
+FIM_MIDDLE = "<|fim_middle|>"
+FIM_SUFFIX = "<|fim_suffix|>"
+ENDOFPROMPT = "<|endofprompt|>"
 
-r50k_pat_str = r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
+class TiktokenEncoding(NamedTuple):
+    """What a .tiktoken rank file does not carry: the name of the
+    pretokenization scheme, and the special tokens with their ids."""
 
-class EncodingParams(TypedDict):
-    """Constructor kwargs for tiktoken.Encoding."""
-
-    name: str
-    explicit_n_vocab: int
-    pat_str: str
-    mergeable_ranks: dict[bytes, int]
+    pretokenizer: str
     special_tokens: dict[str, int]
 
 
-def r50k_base() -> EncodingParams:
-    mergeable_ranks = load_tiktoken_bpe(
-        "https://openaipublic.blob.core.windows.net/encodings/r50k_base.tiktoken",
-        expected_hash="306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930",
-    )
-    return {
-        "name": "r50k_base",
-        "explicit_n_vocab": 50257,
-        "pat_str": r50k_pat_str,
-        "mergeable_ranks": mergeable_ranks,
-        "special_tokens": {ENDOFTEXT: 50256},
-    }
+ENCODINGS: dict[str, TiktokenEncoding] = {
+    "r50k_base": TiktokenEncoding("gpt2", {ENDOFTEXT: 50256}),
+    "cl100k_base": TiktokenEncoding(
+        "gpt4",
+        {ENDOFTEXT: 100257, FIM_PREFIX: 100258, FIM_MIDDLE: 100259, FIM_SUFFIX: 100260, ENDOFPROMPT: 100276},
+    ),
+    "o200k_base": TiktokenEncoding("o200k", {ENDOFTEXT: 199999, ENDOFPROMPT: 200018}),
+}
