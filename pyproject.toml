@@ -55,7 +55,16 @@ Issues = "https://github.com/marcelroed/gigatoken/issues"
 [tool.maturin]
 module-name = "gigatoken.gigatoken_rs"
 strip = true
-exclude = ["gigatoken/*.so", "gigatoken/__pycache__/**"]
+exclude = [
+    "gigatoken/*.so",
+    "gigatoken/__pycache__/**",
+    # Untracked experiment results that cargo's package rules would otherwise
+    # pull into the sdist.
+    "or100_*.json",
+    "top1000_*.json",
+    "pretoken_freq_owt*",
+    "scripts/pretoken_freq_stats.py",
+]
 
 
 [tool.uv]
