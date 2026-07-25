@@ -150,7 +150,7 @@ def try_load_from_config(source: str | os.PathLike[str]) -> "tuple[object, dict[
     if not model.is_file():
         return None
     specials = {str(t["content"]): int(i) for i, t in (config_json.get("added_tokens_decoder") or {}).items()}
-    return BPETokenizer.from_tiktoken_model(model, config, line.pretokenizer), specials
+    return BPETokenizer.from_tiktoken(model, line.pretokenizer, specials), specials
 
 
 def to_tokenizer_json(source: TokenizerJsonSource) -> str | bytes:

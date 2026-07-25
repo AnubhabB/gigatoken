@@ -155,6 +155,8 @@ def _load_tokenizer(spec: str, pretokenizer: str | None = None) -> Tokenizer:
 
     if spec.endswith(".tiktoken"):
         return Tokenizer.from_tiktoken(spec, pretokenizer)
+    if pretokenizer is not None:
+        raise typer.BadParameter("--pretokenizer only applies to .tiktoken vocabulary files")
     if spec.endswith(".model"):
         return Tokenizer.from_sentencepiece(spec)
     return Tokenizer(spec)

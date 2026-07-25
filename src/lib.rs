@@ -80,26 +80,9 @@ impl BPETokenizer {
         special_tokens: Option<HashMap<String, u32>>,
     ) -> PyResult<Self> {
         let scheme = pretokenizer_scheme(pretokenizer)?;
-        let mut special_tokens: Vec<(String, u32)> =
-            special_tokens.unwrap_or_default().into_iter().collect();
-        special_tokens.sort_by_key(|&(_, id)| id);
+        let special_tokens = special_tokens.unwrap_or_default().into_iter().collect();
         Ok(Self {
-            tokenizer: load_tokenizer::tiktoken::load_tiktoken(&path, scheme, &special_tokens)?,
-            workers: WorkerPool::new(),
-        })
-    }
-    /// Load from a tiktoken rank file plus a tokenizer_config.json carrying
-    /// the special tokens — the layout of repos that ship no tokenizer.json
-    /// (e.g. the moonshotai Kimi line) — with the named pretokenizer scheme.
-    #[staticmethod]
-    fn from_tiktoken_model(
-        model_path: PathBuf,
-        config_path: PathBuf,
-        pretokenizer: &str,
-    ) -> PyResult<Self> {
-        let scheme = pretokenizer_scheme(pretokenizer)?;
-        Ok(Self {
-            tokenizer: load_tokenizer::tiktoken::load_tiktoken_model(&model_path, &config_path, scheme)?,
+            tokenizer: load_tokenizer::tiktoken::load_tiktoken(&path, scheme, special_tokens)?,
             workers: WorkerPool::new(),
         })
     }

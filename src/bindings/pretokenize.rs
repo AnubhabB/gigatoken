@@ -34,8 +34,8 @@ impl PretokenizerIter {
 pub(crate) fn pretokenizer_scheme(name: &str) -> PyResult<pretokenize::PretokenizerType> {
     pretokenize::PretokenizerType::from_name(name).ok_or_else(|| {
         pyo3::exceptions::PyValueError::new_err(format!(
-            "unknown pretokenizer scheme {name:?}; expected one of \
-             gpt2, gpt4, qwen2, qwen35, olmo3, deepseek_v3, o200k, nemotron, kimi"
+            "unknown pretokenizer scheme {name:?}; expected one of {}",
+            pretokenize::PretokenizerType::NAMES.join(", ")
         ))
     })
 }

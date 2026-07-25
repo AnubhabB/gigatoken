@@ -76,7 +76,7 @@ pub fn main() {
     let mut r50k = load_tokenizer::tiktoken::load_tiktoken(
         &r50k_path,
         pretokenize::PretokenizerType::GPT2,
-        &[("<|endoftext|>".to_string(), 50256)],
+        vec![("<|endoftext|>".to_string(), 50256)],
     )
     .expect("Failed to load r50k tokenizer");
     eprintln!("Loaded r50k: {:?}", r50k);

@@ -160,13 +160,6 @@ class BPETokenizer:
         to supply — see `gigatoken.Tokenizer.from_tiktoken`, which knows them
         for the encodings OpenAI publishes."""
     @staticmethod
-    def from_tiktoken_model(model_path: str | Path, config_path: str | Path, pretokenizer: str) -> "BPETokenizer":
-        """Load from a tiktoken rank file plus a tokenizer_config.json
-        carrying the special tokens — the layout of repos that ship no
-        tokenizer.json (e.g. the moonshotai Kimi line) — with the named
-        pretokenizer scheme ("gpt2", "gpt4", "qwen2", "qwen35", "olmo3",
-        "deepseek_v3", "o200k", "nemotron", or "kimi")."""
-    @staticmethod
     def from_hf(path: str | Path) -> "BPETokenizer": ...
     def __repr__(self) -> str: ...
 

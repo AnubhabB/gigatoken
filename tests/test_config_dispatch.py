@@ -77,4 +77,4 @@ def test_unknown_scheme_rejected():
     from gigatoken.gigatoken_rs import BPETokenizer
 
     with pytest.raises(ValueError, match="unknown pretokenizer scheme"):
-        BPETokenizer.from_tiktoken_model("x", "y", "not-a-scheme")
+        BPETokenizer.from_tiktoken("x", "not-a-scheme")
