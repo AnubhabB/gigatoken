@@ -26,15 +26,27 @@ fn load_tiktoken_ranks(file_path: impl AsRef<Path>) -> Result<Vec<Vec<u8>>> {
         .collect()
 }
 
-pub fn load_tiktoken(file_path: impl AsRef<Path>) -> Result<Tokenizer> {
+/// Load a tokenizer from a tiktoken rank file with the pretokenizer scheme
+/// and special tokens (`(content, id)`, in id order) supplied by the caller.
+/// A .tiktoken file carries neither — its split regex and specials live in
+/// the code that defines the encoding — and a wrong scheme silently changes
+/// every encode, so neither may be defaulted here.
+pub fn load_tiktoken(
+    file_path: impl AsRef<Path>,
+    pretokenizer: PretokenizerType,
+    special_tokens: &[(String, u32)],
+) -> Result<Tokenizer> {
     let rank_vocab = load_tiktoken_ranks(file_path)?;
     let n_ranks = rank_vocab.len() as u32;
     let mut tokenizer = Tokenizer::from_ranks(rank_vocab)?;
-    // Tiktoken vocab files carry no special tokens; GPT-2-family vocabs
-    // (gpt2/r50k) place <|endoftext|> at the id right after the mergeable
-    // ranks. Register it so tiktoken- and tokenizer.json-loaded tokenizers
-    // encode and decode identically.
-    tokenizer.add_special_token(b"<|endoftext|>".to_vec(), n_ranks.into());
+    tokenizer.set_pretokenizer_type(pretokenizer);
+    for (content, id) in special_tokens {
+        ensure!(
+            *id >= n_ranks,
+            "special token {content:?} (id {id}) overlaps the {n_ranks} mergeable ranks"
+        );
+        tokenizer.add_special_token(content.clone().into_bytes(), (*id).into());
+    }
     Ok(tokenizer)
 }
 
@@ -62,26 +74,23 @@ pub fn load_tiktoken_model(
     config_path: impl AsRef<Path>,
     pretokenizer: PretokenizerType,
 ) -> Result<Tokenizer> {
-    let rank_vocab = load_tiktoken_ranks(model_path)?;
-    let n_ranks = rank_vocab.len() as u32;
-    let mut tokenizer = Tokenizer::from_ranks(rank_vocab)?;
-    tokenizer.set_pretokenizer_type(pretokenizer);
     let config_path = config_path.as_ref();
     let config: TokenizerConfigJson = sonic_rs::from_slice(
         &std::fs::read(config_path)
             .with_context(|| format!("Failed to read {}", config_path.display()))?,
     )
     .map_err(|e| eyre::eyre!("Failed to parse {}: {e}", config_path.display()))?;
-    for (id, token) in &config.added_tokens_decoder {
-        let id = id.parse::<u32>().with_context(|| {
-            format!("added_tokens_decoder id {id:?} in {}", config_path.display())
-        })?;
-        ensure!(
-            id >= n_ranks,
-            "added token {:?} (id {id}) overlaps the {n_ranks} mergeable ranks",
-            token.content
-        );
-        tokenizer.add_special_token(token.content.clone().into_bytes(), id.into());
-    }
-    Ok(tokenizer)
+    let mut special_tokens = config
+        .added_tokens_decoder
+        .iter()
+        .map(|(id, token)| {
+            let path = config_path.display();
+            let id = id
+                .parse::<u32>()
+                .with_context(|| format!("added_tokens_decoder id {id:?} in {path}"))?;
+            Ok((token.content.clone(), id))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    special_tokens.sort_by_key(|&(_, id)| id);
+    load_tiktoken(model_path, pretokenizer, &special_tokens)
 }

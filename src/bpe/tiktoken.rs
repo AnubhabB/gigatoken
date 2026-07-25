@@ -1700,7 +1700,8 @@ mod tests {
         let text = "This is a test string. Please tokenize it!";
         let data_dir = std::env::home_dir().unwrap().join("data");
         let tiktoken_path = data_dir.join("tokenizers/r50k_base.tiktoken");
-        let mut tokenizer = load_tiktoken(tiktoken_path).expect("Failed to load tokenizer");
+        let mut tokenizer = load_tiktoken(tiktoken_path, PretokenizerType::GPT2, &[])
+            .expect("Failed to load tokenizer");
         let pretokenize_iter = crate::pretokenize::pretokenize_as_iter(text.as_bytes());
         let mut output = vec![];
         tokenizer.memoized_encode(pretokenize_iter, |tokens| {

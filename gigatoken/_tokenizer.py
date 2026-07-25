@@ -7,6 +7,7 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from gigatoken._load.hf import capture_named_special_tokens, to_tokenizer_json, try_load_from_config
+from gigatoken._load.tiktoken import ENCODINGS
 from gigatoken._parallel import resolve_parallel
 from gigatoken.gigatoken_rs import BPETokenizer, PadTruncate, SentencePieceTokenizer, load_hf_json
 
@@ -24,8 +25,6 @@ if TYPE_CHECKING:
     from gigatoken.gigatoken_rs import BytesSource, FileSource, _WrapTruncate
 
 _BACKEND_TYPES = (BPETokenizer, SentencePieceTokenizer)
-
-_TIKTOKEN_ENDOFTEXT = "<|endoftext|>"
 
 
 class Tokenizer:
@@ -91,12 +90,39 @@ class Tokenizer:
         return tokenizer
 
     @classmethod
-    def from_tiktoken(cls, path: str | Path) -> "Tokenizer":
-        """Load from a .tiktoken vocabulary file."""
-        tokenizer = cls(BPETokenizer.from_tiktoken(path))
-        # The Rust loader registers <|endoftext|> right after the mergeable
-        # ranks (see src/load_tokenizer/tiktoken.rs), which are contiguous.
-        tokenizer._tiktoken_specials = {_TIKTOKEN_ENDOFTEXT: tokenizer.vocab_size - 1}
+    def from_tiktoken(
+        cls,
+        path: str | Path,
+        pretokenizer: str | None = None,
+        special_tokens: dict[str, int] | None = None,
+    ) -> "Tokenizer":
+        """Load from a .tiktoken vocabulary file.
+
+        The file holds mergeable ranks only — an encoding's pretokenization
+        scheme (split regex) and special tokens live in the code that defines
+        it — so both are taken from the file's name for the encodings OpenAI
+        publishes (r50k_base, cl100k_base, o200k_base). For any other rank
+        file, name the scheme: `pretokenizer` is one of "gpt2"/"r50k",
+        "gpt4"/"cl100k", "o200k", "qwen2", "qwen35", "olmo3", "deepseek_v3",
+        "nemotron" or "kimi", and `special_tokens` maps token content to id
+        (none by default). Nothing is guessed: an unrecognized file name with
+        no `pretokenizer` raises rather than silently mistokenizing.
+        """
+        name = os.path.basename(os.fspath(path)).removesuffix(".tiktoken")
+        known = ENCODINGS.get(name) if pretokenizer is None else None
+        if pretokenizer is None:
+            if known is None:
+                raise ValueError(
+                    f"cannot tell which pretokenizer {name!r} needs: a .tiktoken file does not carry one, "
+                    f"and its name is not one of the encodings OpenAI publishes ({', '.join(ENCODINGS)}). "
+                    'Pass pretokenizer=... (e.g. "gpt4" for a cl100k-style vocabulary), since the wrong '
+                    "scheme silently mistokenizes everything."
+                )
+            pretokenizer = known.pretokenizer
+        if special_tokens is None:
+            special_tokens = known.special_tokens if known is not None else {}
+        tokenizer = cls(BPETokenizer.from_tiktoken(path, pretokenizer, special_tokens))
+        tokenizer._tiktoken_specials = dict(special_tokens)
         return tokenizer
 
     @classmethod

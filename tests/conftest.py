@@ -189,10 +189,16 @@ def dclm_sample_path(dclm_docs, tmp_path_factory) -> Path:
     return path
 
 
+def tiktoken_vocab_path(encoding: str) -> Path:
+    """Path to a published .tiktoken vocabulary (r50k_base, cl100k_base,
+    o200k_base, ...), downloaded from OpenAI if absent."""
+    return _download_url(
+        f"https://openaipublic.blob.core.windows.net/encodings/{encoding}.tiktoken",
+        f"{encoding}.tiktoken",
+    )
+
+
 @pytest.fixture(scope="session")
 def r50k_tiktoken_path() -> Path:
     """Path to r50k_base.tiktoken, downloaded from OpenAI if absent."""
-    return _download_url(
-        "https://openaipublic.blob.core.windows.net/encodings/r50k_base.tiktoken",
-        "r50k_base.tiktoken",
-    )
+    return tiktoken_vocab_path("r50k_base")
