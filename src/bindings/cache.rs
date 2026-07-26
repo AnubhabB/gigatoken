@@ -2,7 +2,7 @@
 //! construction. Semantics in the .pyi stubs, mechanism in
 //! `Tokenizer::set_max_cache_bytes`.
 
-use crate::bpe::Tokenizer;
+use crate::bpe::{SentencePieceBPE, Tokenizer};
 use pyo3::prelude::*;
 use std::sync::Mutex;
 
@@ -18,6 +18,12 @@ pub(crate) fn apply_max_cache_bytes(mut tokenizer: Tokenizer) -> Tokenizer {
         tokenizer.set_max_cache_bytes(configured);
     }
     tokenizer
+}
+
+/// SentencePiece analog of [`apply_max_cache_bytes`].
+pub(crate) fn apply_max_cache_bytes_sp(mut model: SentencePieceBPE) -> SentencePieceBPE {
+    model.set_max_cache_bytes(*MAX_CACHE_BYTES.lock().unwrap());
+    model
 }
 
 #[pyfunction]

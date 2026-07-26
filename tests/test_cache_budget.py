@@ -3,7 +3,7 @@
 import random
 
 import gigatoken
-from gigatoken.gigatoken_rs import BPETokenizer
+from gigatoken.gigatoken_rs import BPETokenizer, SentencePieceTokenizer
 
 DEFAULT = 512 * 1024 * 1024
 
@@ -37,4 +37,29 @@ def test_max_cache_bytes_knob(gpt2_tokenizer_path):
     grown = default.cache_entries()
     assert grown > seed + 60_000
     assert small.cache_entries() < seed + 60_000
+    assert small.cache_entries() < grown
+
+
+def test_max_cache_bytes_sentencepiece(tinyllama_tokenizer_path):
+    # SentencePiece caches start empty (no vocab seed); the budget covers
+    # the growing maps past the fixed 24 MiB front cache, so 25 MiB leaves
+    # ~1 MiB for ~80k distinct units.
+    rng = random.Random(4321)
+    text = " ".join(
+        "".join(rng.choice("abcdefghijklmnopqrstuvwxyz") for _ in range(rng.randint(6, 10)))
+        for _ in range(80_000)
+    )
+    try:
+        gigatoken.set_max_cache_bytes(25 * 1024 * 1024)
+        small = SentencePieceTokenizer.from_hf(tinyllama_tokenizer_path)
+    finally:
+        gigatoken.set_max_cache_bytes(DEFAULT)
+    default = SentencePieceTokenizer.from_hf(tinyllama_tokenizer_path)
+    assert small.cache_entries() == default.cache_entries() == 0
+
+    small_ids = small.encode(text)
+    assert (small_ids == default.encode(text)).all()
+    grown = default.cache_entries()
+    assert grown > 60_000
+    assert small.cache_entries() < 60_000
     assert small.cache_entries() < grown

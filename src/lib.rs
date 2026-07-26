@@ -330,16 +330,22 @@ impl SentencePieceTokenizer {
             }
         })
     }
+
+    /// Wrap a loaded model, applying the global cache budget to it and to
+    /// the single-document encode state.
+    fn with_model(model: bpe::SentencePieceBPE) -> Self {
+        let tokenizer = bindings::cache::apply_max_cache_bytes_sp(model);
+        let state =
+            bpe::sentencepiece::EncodeState::with_budget(tokenizer.max_cache_bytes());
+        Self { tokenizer, state }
+    }
 }
 
 #[pymethods]
 impl SentencePieceTokenizer {
     #[staticmethod]
     fn from_hf(path: PathBuf) -> PyResult<Self> {
-        Ok(Self {
-            tokenizer: load_tokenizer::hf::load_hf_sentencepiece(&path)?,
-            state: bpe::sentencepiece::EncodeState::new(),
-        })
+        Ok(Self::with_model(load_tokenizer::hf::load_hf_sentencepiece(&path)?))
     }
 
     /// Encode a batch of documents in parallel, releasing the GIL. Accepts
@@ -487,6 +493,12 @@ impl SentencePieceTokenizer {
         Ok(self.tokenizer.decode(ids.as_slice()?))
     }
 
+    /// Cached unit entries on the single-document `encode` path's state
+    /// (batch encoders are per-call); see `BPETokenizer.cache_entries`.
+    fn cache_entries(&self) -> usize {
+        self.state.cache_size()
+    }
+
     fn __repr__(&self) -> PyResult<String> {
         Ok(format!("{:?}", self.tokenizer))
     }
@@ -521,14 +533,9 @@ fn load_hf_json(py: Python<'_>, data: Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
             },
         )?
         .into_any()),
-        load_tokenizer::hf::HfTokenizer::SentencePiece(tokenizer) => Ok(Py::new(
-            py,
-            SentencePieceTokenizer {
-                tokenizer,
-                state: bpe::sentencepiece::EncodeState::new(),
-            },
-        )?
-        .into_any()),
+        load_tokenizer::hf::HfTokenizer::SentencePiece(tokenizer) => {
+            Ok(Py::new(py, SentencePieceTokenizer::with_model(tokenizer))?.into_any())
+        }
     }
 }
 
