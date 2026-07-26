@@ -161,6 +161,11 @@ class BPETokenizer:
         for the encodings OpenAI publishes."""
     @staticmethod
     def from_hf(path: str | Path) -> "BPETokenizer": ...
+    def cache_entries(self) -> int:
+        """Cached pretoken entries on the single-document `encode` path's
+        tokenizer (batch workers keep their own caches): grows as text is
+        encoded, drops back toward vocab-seed level when a budgeted cache
+        wipes (see set_max_cache_bytes)."""
     def __repr__(self) -> str: ...
 
 class SentencePieceTokenizer:
@@ -252,6 +257,21 @@ def get_hf_token() -> str | None:
     """The HuggingFace access token, discovered like huggingface_hub does it:
     HF_TOKEN (or legacy HUGGING_FACE_HUB_TOKEN), then the token file
     (HF_TOKEN_PATH, default $HF_HOME/token)."""
+
+def set_max_cache_bytes(max_bytes: int | None) -> None:
+    """Set the process-global encode-cache budget in bytes per encode
+    worker (a parallel batch encode may use up to workers x budget),
+    applied to BPE-backend tokenizers constructed AFTERWARD. When a
+    worker's caches fill the budget they are wiped back to their seed
+    state and re-filled; output is never affected — a wipe only costs
+    re-computing previously cached pretokens. Budgets too small for the
+    vocabulary seed are floored up to it; `None` removes the bound.
+    The default is 512 MiB, large enough that hit rates on diverse
+    corpora match an unbounded cache."""
+
+def get_max_cache_bytes() -> int | None:
+    """The budget set_max_cache_bytes would apply to newly constructed
+    tokenizers: bytes per encode worker, or None when unbounded."""
 
 class SpecialTokenFound(Exception):
     """Raised by _encode_batch_list_compat when a `forbid` pattern occurs in
